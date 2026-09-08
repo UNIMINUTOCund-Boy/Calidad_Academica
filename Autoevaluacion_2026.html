@@ -94,6 +94,7 @@ main{max-width:1380px;margin:0 auto;padding:26px 24px 60px;display:grid;gap:22px
 .ib{border:1px solid var(--gris-2);background:#fff;border-radius:8px;padding:6px 10px;font-size:12.5px;color:var(--azul);display:inline-flex;align-items:center;gap:6px;font-weight:600;transition:background .2s,border-color .2s}
 .ib svg{width:15px;height:15px}
 .ib:hover{background:var(--azul-5);border-color:var(--azul-4)}
+.ib.on{background:var(--azul);color:#fff;border-color:var(--azul)}
 #map{width:100%;height:auto;display:block}
 .dep{fill:var(--azul-5);stroke:var(--azul-4);stroke-width:1.5;transition:fill .3s}
 .dep.boy{fill:#F1F4F8}
@@ -277,6 +278,13 @@ footer{max-width:1380px;margin:0 auto;padding:0 24px 30px;font-size:12.5px;color
       <div class="card-h"><div><h2>Ranking de centros</h2><p>Calificación global promedio 2026 (escala 0–100). Pase el cursor para ubicar en el mapa.</p></div></div>
       <div class="rank" id="rank"></div>
     </div>
+  </section>
+
+  <section class="card">
+    <div class="card-h"><div><h2>Comportamiento histórico de la Sede: medición 2024 vs 2026</h2><p id="histsub">Calificación global promedio por centro en cada medición (escala 0–100).</p></div>
+      <div class="tools" role="tablist"><button class="ib on" id="tgC" onclick="histView('centro')">Por centro</button><button class="ib" id="tgF" onclick="histView('factor')">Por factor</button></div></div>
+    <div class="cwrap" style="height:320px"><canvas id="cHist"></canvas></div>
+    <div class="hint" id="histhint"></div>
   </section>
 
   <section class="card">
@@ -887,6 +895,27 @@ async function exportarPDF(el,name){el=el||document.querySelector('#panel .p-bod
 Chart.defaults.font.family="'Source Sans 3',system-ui,sans-serif";Chart.defaults.font.size=12;Chart.defaults.color='#4A5B72';
 Chart.defaults.plugins.tooltip.backgroundColor='#012B5C';Chart.defaults.plugins.tooltip.titleFont={family:'Sora',weight:'600'};Chart.defaults.plugins.tooltip.padding=10;Chart.defaults.plugins.tooltip.cornerRadius=8;
 const bandPlugin={id:'bands',beforeDraw(c){const {ctx,chartArea:a,scales}=c;const s=scales.x&&scales.x.axis==='x'&&c.config.options.indexAxis==='y'?scales.x:scales.y;if(!s||!a)return;const horiz=s.axis==='x';ctx.save();NIV.forEach(n=>{const lo=Math.max(n.min,s.min),hi=Math.min(n.k===5?100:n.max+0.01,s.max);if(hi<=lo)return;ctx.fillStyle=n.color;ctx.globalAlpha=.10;if(horiz){const x0=s.getPixelForValue(lo),x1=s.getPixelForValue(hi);ctx.fillRect(x0,a.top,x1-x0,a.bottom-a.top)}else{const y0=s.getPixelForValue(hi),y1=s.getPixelForValue(lo);ctx.fillRect(a.left,y0,a.right-a.left,y1-y0)}});ctx.restore()}};
+let histChart=null,histMode='centro';
+const g24Sede=mean(DATA.map(d=>d.CALIFICACION_GLOBAL_2024)),g26Sede=mean(DATA.map(d=>d.CALIFICACION_GLOBAL));
+function histView(mode){histMode=mode;document.getElementById('tgC').classList.toggle('on',mode==='centro');document.getElementById('tgF').classList.toggle('on',mode==='factor');
+ if(histChart)histChart.destroy();const ctx=document.getElementById('cHist');const pt={pointRadius:4,pointHoverRadius:6,pointBorderColor:'#fff',pointBorderWidth:2,tension:.3};
+ let labels,ds,full;
+ if(mode==='centro'){const ks=order;labels=ks.map(k=>CU[k].nombre);full=ks.map(k=>`${CU[k].tipo} ${CU[k].nombre} · ${byCU(k).length} programas`);
+  ds=[{label:'Medición 2024',data:ks.map(k=>cuAvg24[k]),borderColor:'#6F8FB8',backgroundColor:'#6F8FB8',borderWidth:2,...pt},
+      {label:'Medición 2026',data:ks.map(k=>cuAvg[k]),borderColor:'#012B5C',backgroundColor:'#012B5C',borderWidth:2.5,...pt}];
+  document.getElementById('histsub').textContent='Calificación global promedio por centro en cada medición (escala 0–100). Clic en un punto abre el informe del centro.';
+  const d=g26Sede-g24Sede;document.getElementById('histhint').innerHTML=`Promedio Sede: <b>2024 · ${f1(g24Sede)}</b> → <b>2026 · ${f1(g26Sede)}</b> <span class="${d>0.2?'up':d<-0.2?'dn':'eq'}">${d>0?'▲':d<0?'▼':'●'} ${f1(Math.abs(d))}</span> · ${Object.keys(CU).filter(k=>cuAvg[k]>cuAvg24[k]+0.2).length} centros mejoran, ${Object.keys(CU).filter(k=>cuAvg[k]<cuAvg24[k]-0.2).length} descienden`;
+ }else{labels=FACT.map(f=>f.replace(/^Factor (\d+) - /,'F$1 · ').replace(/(.{22}).+/,'$1…'));full=FACT;
+  ds=[{label:'Global Sede 2024 (referencia)',data:FACT.map(()=>g24Sede),borderColor:'#6F8FB8',backgroundColor:'#6F8FB8',borderWidth:2,borderDash:[6,4],pointRadius:0,pointHoverRadius:0},
+      {label:'Medición 2026 por factor',data:facAvg,borderColor:'#012B5C',backgroundColor:'#012B5C',borderWidth:2.5,...pt,pointBackgroundColor:facAvg.map(v=>nivel(v).color)}];
+  document.getElementById('histsub').textContent='Promedio de la Sede en cada factor · medición 2026 (escala 0–100). El color del punto indica el nivel de cumplimiento.';
+  document.getElementById('histhint').innerHTML=`La fuente consolida la medición 2024 solo como calificación global por programa (sin detalle por factor); se muestra como línea de referencia (${f1(g24Sede)}). ${FACT.filter((f,i)=>facAvg[i]>=g24Sede).length} de 12 factores superan en 2026 el global 2024 de la Sede.`;}
+ histChart=new Chart(ctx,{type:'line',plugins:[bandPlugin],data:{labels,datasets:ds},
+  options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+   onClick:(e,el)=>{if(mode==='centro'&&el.length)openCU(order[el[0].index]);if(mode==='factor'&&el.length)facDetail(el[0].index)},
+   onHover:(e,el)=>e.native.target.style.cursor=el.length?'pointer':'default',
+   scales:{y:{min:50,max:100,grid:{color:'rgba(1,43,92,.08)'},ticks:{stepSize:10}},x:{grid:{display:false},ticks:{font:{size:11},maxRotation:mode==='factor'?40:0}}},
+   plugins:{legend:{position:'top',align:'end',labels:{boxWidth:10,boxHeight:10,usePointStyle:true}},tooltip:{callbacks:{title:it=>full[it[0].dataIndex],label:it=>` ${it.dataset.label}: ${f1(it.raw)} / 100${it.raw!=null?' · '+nivel(it.raw).label:''}`}}}}});}
 let current=null,sel=null,charts={};
 const short=n=>n.length>34?n.slice(0,32)+'…':n;
 function openCU(k){current=k;sel=null;const c=CU[k],rows=byCU(k),avg=cuAvg[k],avg24=cuAvg24[k];
@@ -945,6 +974,8 @@ function buildTable(rows,k){let h='<table><thead><tr><th>Factor</th>'+rows.map((
  h+='<tr class="tot"><td class="f">Calificación global 2026</td>'+rows.map(r=>`<td>${f1(r.CALIFICACION_GLOBAL)}</td>`).join('')+`<td>${f1(cuAvg[k])}</td></tr><tr><td class="f">Calificación global 2024</td>`+rows.map(r=>`<td style="background:#F4F4F4">${r.CALIFICACION_GLOBAL_2024==null?'NA':f1(r.CALIFICACION_GLOBAL_2024)}</td>`).join('')+`<td style="background:#F4F4F4">${f1(cuAvg24[k])}</td></tr></tbody></table>`;
  h+=`<div class="hint" style="margin-top:10px">${NIV.map(n=>`<span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${n.color};margin-right:5px"></i>${n.rango} ${n.label}</span>`).join('')}</div>`;
  document.getElementById('tbl').innerHTML=h}
+
+histView('centro');
 
 /* ---------- animated network background ---------- */
 (function(){const cv=document.getElementById('net'),ctx=cv.getContext('2d');let W,H,pts=[],raf;const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
